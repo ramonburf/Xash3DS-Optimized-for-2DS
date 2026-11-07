@@ -1,3 +1,30 @@
+# Xash3DS, optimized for the 2DS
+
+A fork of [masterfeizz/Xash3DS](https://github.com/masterfeizz/Xash3DS) tuned for the original 2DS and old 3DS (268 MHz ARM11, 64 MB RAM). New 3DS behaviour is unchanged.
+
+## What's different
+
+Faster map loading (all consoles):
+- File-existence checks on the SD card are answered from a per-folder listing cache instead of one SD call per probe
+- 16 KB file read buffer instead of 2 KB, and no `stat()` on every file open
+- No software mipmaps at texture upload (picaGL discards mip levels above 0 anyway)
+- Faster sound visibility (PAS) build at map load
+
+Lighter defaults on old 3DS / 2DS only:
+- `fps_max 30`, 128px max texture size, `r_dynamic 0`, `r_decals 128`, `gl_check_errors 0`
+
+If you used Xash3DS before, delete the saved config in `sdmc:/xash3d/valve/` so the new defaults take effect.
+
+## Building
+
+Needs Docker. From the repository root:
+
+    docker run --rm -v "$PWD:/src" -w /src devkitpro/devkitarm bash scripts/3ds/build.sh
+
+On Windows Git Bash, prefix it with `MSYS_NO_PATHCONV=1`. The script fetches pinned picaGL and hlsdk_3ds versions and writes `Xash3DS.3dsx`.
+
+---
+
 # Xash3D FWGS Engine [![Build Status](https://travis-ci.org/FWGS/xash3d.svg)](https://travis-ci.org/FWGS/xash3d) [![Windows Build Status](https://ci.appveyor.com/api/projects/status/github/FWGS/xash3d?svg=true)](https://ci.appveyor.com/project/a1batross/xash3d)
 
 Latest version of the engine is available at:

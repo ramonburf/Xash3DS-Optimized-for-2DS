@@ -318,3 +318,9 @@ CMakeSettings.json
 
 # rpmbuild
 RPMS/
+
+# 3DS build (scripts/3ds/build.sh)
+/deps/
+/build/
+/lib/
+*.map

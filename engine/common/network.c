@@ -15,6 +15,7 @@ GNU General Public License for more details.
 
 #ifdef _3DS
 #include <3ds.h>
+#include <malloc.h> // memalign
 #endif
 
 #ifdef _WIN32

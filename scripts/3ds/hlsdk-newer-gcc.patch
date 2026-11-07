@@ -1,0 +1,14 @@
+diff --git a/cl_dll/hl/hl_baseentity.cpp b/cl_dll/hl/hl_baseentity.cpp
+index 38978f6..7beb1c6 100644
+--- a/cl_dll/hl/hl_baseentity.cpp
++++ b/cl_dll/hl/hl_baseentity.cpp
+@@ -108,6 +108,9 @@ Vector UTIL_VecToAngles( const Vector &vec ){ return 0; }
+ CSprite *CSprite::SpriteCreate( const char *pSpriteName, const Vector &origin, BOOL animate ) { return 0; }
+ void CBeam::PointEntInit( const Vector &start, int endIndex ) { }
+ CBeam *CBeam::BeamCreate( const char *pSpriteName, int width ) { return NULL; }
++// newer GCC emits the inline CBeam::Center() in the client, which needs these
++const Vector &CBeam::GetStartPos( void ) { return pev->origin; }
++const Vector &CBeam::GetEndPos( void ) { return pev->angles; }
+ void CSprite::Expand( float scaleSpeed, float fadeSpeed ) { }
+ 
+ CBaseEntity* CBaseMonster::CheckTraceHullAttack( float flDist, int iDamage, int iDmgType ) { return NULL; }
