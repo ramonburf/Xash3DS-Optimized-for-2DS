@@ -1462,7 +1462,25 @@ int EXPORT Host_Main( int argc, const char **argv, const char *progname, int bCh
 
 	Cbuf_Execute();
 
-	// exec all files from userconfig.d 
+#ifdef _3DS
+	// config.cfg saved by older builds still holds the old values of
+	// settings whose defaults changed (bilinear filtering, no vsync, fps cap)
+	// and would override the new defaults forever; upgrade them once
+	{
+		convar_t *cfgver = Cvar_Get( "ctr_cfgver", "0", CVAR_ARCHIVE, "3DS settings upgrade version" );
+
+		if( cfgver->integer < 1 )
+		{
+			MsgDev( D_INFO, "Upgrading saved 3DS video settings\n" );
+			Cvar_Set( "gl_texturemode", "GL_NEAREST" );
+			Cvar_Set( "gl_swapInterval", "1" );
+			Cvar_Set( "fps_max", "60" );
+			Cvar_Set( "ctr_cfgver", "1" );
+		}
+	}
+#endif
+
+	// exec all files from userconfig.d
 	Host_Userconfigd_f();
 
 	// in case of empty init.rc
