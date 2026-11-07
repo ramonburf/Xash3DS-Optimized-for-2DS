@@ -2638,7 +2638,10 @@ void Mod_CalcPHS( void )
 	rowbytes = rowwords * 4;
 
 	// typically PHS reqiured more room because RLE fails on multiple 1 not 0
-	phsdatasize = world.visdatasize * 32; // empirically determined
+	// the buffer grows below as needed; reserving visdatasize * 32 up front
+	// (as before) costs several MB at map load, too much for old 3DS / 2DS
+	phsdatasize = world.visdatasize * 4;
+	if( phsdatasize < 65536 ) phsdatasize = 65536;
 
 	// allocate pvs and phs data single array
 	visofs = Mem_Alloc( worldmodel->mempool, num * sizeof( int ));
@@ -2708,7 +2711,13 @@ void Mod_CalcPHS( void )
 
 		if( total_size > phsdatasize )
 		{
-			Host_Error( "CalcPHS: vismap expansion overflow %s > %s\n", Q_memprint( total_size ), Q_memprint( phsdatasize ));
+			size_t	used = vismap_p - vismap;
+
+			while( phsdatasize < (size_t)total_size )
+				phsdatasize += phsdatasize / 2;
+			compressed_pas = Mem_Realloc( worldmodel->mempool, compressed_pas, phsdatasize );
+			vismap = compressed_pas;
+			vismap_p = vismap + used;
 		}
 
 		Q_memcpy( vismap_p, comp, rowsize );

@@ -143,17 +143,41 @@ static fs_dircache_t *FS_DirCacheBuild( const char *dir, const char *realdir, ui
 	char		**list = NULL;
 	int		count = 0, alloced = 0, i;
 
+	qboolean	complete = true;
+
 	e = calloc( 1, sizeof( *e ));
 	if( !e ) return NULL;
 	e->hash = hash;
 	e->path = strdup( dir );
+	if( !e->path )
+	{
+		free( e );
+		return NULL;
+	}
 
 	d = opendir( realdir ); // original case
+	if( !d && errno != ENOENT && errno != ENOTDIR )
+	{
+		// some other failure (out of handles, card error): don't remember
+		// it as "directory missing", let the caller ask the disk
+		free( e->path );
+		free( e );
+		return NULL;
+	}
+
 	if( d )
 	{
-		while(( ent = readdir( d )) != NULL )
+		for( ;; )
 		{
 			char	name[MAX_SYSPATH];
+
+			errno = 0;
+			if(( ent = readdir( d )) == NULL )
+			{
+				// NULL is also how readdir reports a read error
+				if( errno ) complete = false;
+				break;
+			}
 
 			if( ent->d_name[0] == '.' && ( !ent->d_name[1] || ( ent->d_name[1] == '.' && !ent->d_name[2] )))
 				continue;
@@ -166,11 +190,12 @@ static fs_dircache_t *FS_DirCacheBuild( const char *dir, const char *realdir, ui
 				char **newlist;
 				alloced = alloced ? alloced * 2 : 64;
 				newlist = realloc( list, alloced * sizeof( char* ));
-				if( !newlist ) break;
+				if( !newlist ) { complete = false; break; }
 				list = newlist;
 			}
 			FS_DirCacheNormalize( ent->d_name, name, sizeof( name ));
-			list[count++] = strdup( name );
+			if(( list[count] = strdup( name )) == NULL ) { complete = false; break; }
+			count++;
 		}
 		closedir( d );
 
@@ -180,7 +205,8 @@ static fs_dircache_t *FS_DirCacheBuild( const char *dir, const char *realdir, ui
 		e->names = calloc( e->tablesize, sizeof( char* ));
 		e->hashes = calloc( e->tablesize, sizeof( uint ));
 
-		if( !e->names || !e->hashes )
+		// a partial listing could hide real files, so only cache complete ones
+		if( !complete || !e->names || !e->hashes )
 		{
 			for( i = 0; i < count; i++ ) free( list[i] );
 			free( list );
@@ -283,8 +309,26 @@ static void FS_DirCacheInvalidate( const char *path )
 		*slash = 0; // now the parent directory
 	}
 }
+// drop everything, e.g. on rescan (files may have been added from outside) and shutdown
+static void FS_DirCacheClear( void )
+{
+	int	i;
+
+	for( i = 0; i < FS_DIRCACHE_BUCKETS; i++ )
+	{
+		while( fs_dircache[i] )
+		{
+			fs_dircache_t	*e = fs_dircache[i];
+
+			fs_dircache[i] = e->next;
+			FS_DirCacheFreeEntry( e );
+		}
+	}
+}
 #define FS_DIRCACHE_INVALIDATE( p ) FS_DirCacheInvalidate( p )
+#define FS_DIRCACHE_CLEAR() FS_DirCacheClear()
 #else
+#define FS_DIRCACHE_CLEAR()
 #define FS_DIRCACHE_INVALIDATE( p )
 #endif // _3DS
 
@@ -1391,6 +1435,7 @@ void FS_Rescan( void )
 {
 	MsgDev( D_NOTE, "FS_Rescan( %s )\n", GI->title );
 	FS_ClearSearchPath();
+	FS_DIRCACHE_CLEAR();
 
 #ifdef __ANDROID__
 	char *str;
@@ -2218,6 +2263,8 @@ void FS_Shutdown( void )
 {
 	int	i;
 
+	FS_DIRCACHE_CLEAR();
+
 	// release gamedirs
 	for( i = 0; i < SI.numgames; i++ )
 		if( SI.games[i] ) Mem_Free( SI.games[i] );
@@ -2353,7 +2400,7 @@ static file_t* FS_SysOpen( const char* filepath, const char* mode )
 	}
 
 	// For files opened in append mode, we start at the end of the file
-	if( mod & O_APPEND ) file->position = file->real_length;
+	if( opt & O_APPEND ) file->position = file->real_length; // O_APPEND lives in opt, not mod
 	else lseek( file->handle, 0, SEEK_SET );
 
 #ifdef _3DS
@@ -2373,19 +2420,33 @@ FS_FlushWriteBuffer
 Write out data collected by FS_Write on a write-buffered file
 ====================
 */
-static qboolean FS_FlushWriteBuffer( file_t *file )
+static fs_offset_t FS_WriteAll( int handle, const byte *data, fs_offset_t len )
 {
-	fs_offset_t	len = file->wbuff_len;
 	fs_offset_t	done = 0, nb;
-
-	file->wbuff_len = 0;
 
 	while( done < len )
 	{
-		nb = write( file->handle, file->buff + done, len - done );
-		if( nb <= 0 ) return false;
+		nb = write( handle, data + done, len - done );
+		if( nb <= 0 ) break;
 		done += nb;
 	}
+	return done;
+}
+
+static qboolean FS_FlushWriteBuffer( file_t *file )
+{
+	fs_offset_t	done = FS_WriteAll( file->handle, file->buff, file->wbuff_len );
+
+	if( done < file->wbuff_len )
+	{
+		// keep what didn't make it (e.g. SD card full) so the error is reported
+		// and nothing that was accepted gets silently dropped
+		memmove( file->buff, file->buff + done, file->wbuff_len - done );
+		file->wbuff_len -= done;
+		return false;
+	}
+
+	file->wbuff_len = 0;
 	return true;
 }
 
@@ -2752,11 +2813,16 @@ Close a file
 */
 int FS_Close( file_t *file )
 {
-	if( file->wbuffered && file->wbuff_len )
-		FS_FlushWriteBuffer( file );
+	qboolean	flushed = true;
 
-	if( close( file->handle ))
+	if( file->wbuffered && file->wbuff_len )
+		flushed = FS_FlushWriteBuffer( file );
+
+	if( close( file->handle ) || !flushed )
+	{
+		Mem_Free( file );
 		return EOF;
+	}
 
 	Mem_Free( file );
 	return 0;
@@ -2793,8 +2859,7 @@ fs_offset_t FS_Write( file_t *file, const void *data, size_t datasize )
 		}
 		else
 		{
-			result = write( file->handle, data, (fs_offset_t)datasize );
-			if( result < 0 ) return 0;
+			result = FS_WriteAll( file->handle, data, (fs_offset_t)datasize );
 		}
 
 		file->position += result;
