@@ -63,4 +63,29 @@ cp mainui_3ds/libmainui.a lib/
 
 echo "== engine"
 make -j$J TARGET=Xash3DS "$OLDC $LEGACY"
-ls -la Xash3DS.3dsx
+
+if [ -n "$SKIP_CIA" ]; then
+	ls -la Xash3DS.3dsx
+	exit 0
+fi
+
+echo "== cia"
+# The CIA asks for the 80 MB memory mode (cia.rsf); a .3dsx run from the
+# Homebrew Launcher only gets what the launcher leaves, which isn't enough
+# for Half-Life on old 3DS / 2DS. Set SKIP_CIA=1 to build only the .3dsx.
+MAKEROM_VER=v0.19.0
+MAKEROM_ZIP=makerom-$MAKEROM_VER-ubuntu_x86_64.zip
+if [ ! -x deps/makerom/makerom ]; then
+	mkdir -p deps/makerom
+	curl -fsSL -o deps/makerom/$MAKEROM_ZIP \
+		https://github.com/3DSGuy/Project_CTR/releases/download/makerom-$MAKEROM_VER/$MAKEROM_ZIP
+	unzip -oq deps/makerom/$MAKEROM_ZIP -d deps/makerom
+	# the zip layout isn't guaranteed, so find the binary wherever it landed
+	MR=$(find deps/makerom -type f -name makerom | head -1)
+	[ -n "$MR" ] || { echo "makerom not found in $MAKEROM_ZIP"; exit 1; }
+	[ "$MR" = deps/makerom/makerom ] || mv "$MR" deps/makerom/makerom
+	chmod +x deps/makerom/makerom
+fi
+PATH=$ROOT/deps/makerom:$PATH make TARGET=Xash3DS cia
+
+ls -la Xash3DS.3dsx Xash3DS.cia

@@ -14,6 +14,8 @@ Faster map loading (all consoles):
 Lighter defaults on old 3DS / 2DS only:
 - `fps_max 30`, 128px max texture size, `r_dynamic 0`, `r_decals 128`, `gl_check_errors 0`
 
+**On old 3DS / 2DS, install the `.cia`.** It requests the 80 MB memory mode; the `.3dsx` from the Homebrew Launcher gets too little memory for Half-Life there and can crash with "out of memory".
+
 If you used Xash3DS before, delete the saved config in `sdmc:/xash3d/valve/` so the new defaults take effect.
 
 ## Building
@@ -22,7 +24,7 @@ Needs Docker. From the repository root:
 
     docker run --rm -v "$PWD:/src" -w /src devkitpro/devkitarm bash scripts/3ds/build.sh
 
-On Windows Git Bash, prefix it with `MSYS_NO_PATHCONV=1`. The script fetches pinned picaGL and hlsdk_3ds versions and writes `Xash3DS.3dsx`.
+On Windows Git Bash, prefix it with `MSYS_NO_PATHCONV=1`. The script fetches pinned picaGL, hlsdk_3ds and makerom versions and writes `Xash3DS.3dsx` and `Xash3DS.cia` (set `SKIP_CIA=1` for just the `.3dsx`).
 
 ---
 
