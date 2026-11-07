@@ -1020,6 +1020,12 @@ void GL_GenerateMipmaps( byte *buffer, rgbdata_t *pic, gltexture_t *tex, GLenum 
 	if( tex->flags & TF_NOMIPMAP )
 		return;
 
+#ifdef _3DS
+	// picaGL discards every glTexImage2D/glTexSubImage2D call with level != 0,
+	// so building software mips here only burns CPU time during map load
+	return;
+#endif
+
 	if( GL_Support( GL_SGIS_MIPMAPS_EXT ) && !( tex->flags & ( TF_NORMALMAP|TF_ALPHACONTRAST )))
 	{
 		pglHint( GL_GENERATE_MIPMAP_HINT_SGIS, GL_NICEST );

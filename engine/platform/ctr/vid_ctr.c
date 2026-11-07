@@ -88,7 +88,7 @@ void GL_SetupAttributes()
 
 void GL_InitExtensions( void )
 {
-	u8 isN3DS;
+	bool isN3DS = false;
 
 	GL_SetExtension( GL_OPENGL_110, true );
 
@@ -139,7 +139,8 @@ void GL_InitExtensions( void )
 
 	APT_CheckNew3DS(&isN3DS);
 
-	glConfig.max_2d_texture_size = 256;
+	// 256px textures are too heavy on old 3DS/2DS (VRAM + bandwidth); keep them at 128
+	glConfig.max_2d_texture_size = isN3DS ? 256 : 128;
 
 	Cvar_Get( "gl_max_texture_size", "0", CVAR_INIT, "opengl texture max dims" );
 	Cvar_Set( "gl_max_texture_size", va( "%i", glConfig.max_2d_texture_size ) );

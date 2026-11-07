@@ -2619,6 +2619,7 @@ void Mod_CalcPHS( void )
 	byte	*compressed_pas;
 	byte	*scan, *comp;
 	uint	*dest, *src;
+	short	*rowfirst, *rowlast;
 	double	timestart;
 	size_t	phsdatasize;
 
@@ -2648,17 +2649,27 @@ void Mod_CalcPHS( void )
 	scan = uncompressed_vis;
 	vcount = 0;
 
+	// per-row span of non-zero words, PVS rows are mostly zeroes so
+	// only OR the part that matters (big win on slow CPUs like the 3DS)
+	rowfirst = Mem_Alloc( worldmodel->mempool, num * sizeof( short ) * 2 );
+	rowlast = rowfirst + num;
+
 	// uncompress pvs first
 	for( i = 0; i < num; i++, scan += rowbytes )
 	{
+		uint	*words = (uint *)scan;
+
 		Q_memcpy( scan, Mod_LeafPVS( worldmodel->leafs + i, worldmodel ), rowbytes );
+
+		for( l = 0; l < rowwords && !words[l]; l++ );
+		rowfirst[i] = l;
+		for( l = rowwords - 1; l >= rowfirst[i] && !words[l]; l-- );
+		rowlast[i] = l;
+
 		if( i == 0 ) continue;
 
-		for( j = 0; j < num; j++ )
-		{
-			if( scan[j>>3] & (1<<( j & 7 )))
-				vcount++;
-		}
+		for( l = rowfirst[i]; l <= rowlast[i]; l++ )
+			vcount += __builtin_popcount( words[l] );
 	}
 
 	scan = uncompressed_vis;
@@ -2685,7 +2696,7 @@ void Mod_CalcPHS( void )
 				if( index >= num ) continue;
 
 				src = (uint *)uncompressed_vis + index * rowwords;
-				for( l = 0; l < rowwords; l++ )
+				for( l = rowfirst[index]; l <= rowlast[index]; l++ )
 					dest[l] |= src[l];
 			}
 		}
@@ -2705,11 +2716,8 @@ void Mod_CalcPHS( void )
 
 		if( i == 0 ) continue;
 
-		for( j = 0; j < num; j++ )
-		{
-			if(((byte *)dest)[j>>3] & (1<<( j & 7 )))
-				hcount++;
-		}
+		for( l = 0; l < rowwords; l++ )
+			hcount += __builtin_popcount( dest[l] );
 	}
 
 	// adjust compressed pas data to fit the size
@@ -2721,6 +2729,7 @@ void Mod_CalcPHS( void )
 
 	// release uncompressed data
 	Mem_Free( uncompressed_vis );
+	Mem_Free( rowfirst );
 	Mem_Free( visofs );	// release vis offsets
 
 	// NOTE: we don't need to store off pointer to compressed pas-data

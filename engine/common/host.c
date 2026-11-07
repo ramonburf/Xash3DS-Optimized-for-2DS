@@ -77,6 +77,14 @@ convar_t 	*cmd_scripting = NULL;
 static int num_decals;
 
 #ifdef _3DS
+bool ctr_isNew3DS = false; // old 3DS/2DS (268MHz, single app core) gets lighter defaults
+// O3DS/2DS can't hold 60fps; a 30fps cap gives steadier pacing and frees CPU for GPU/sound
+#define HOST_DEFAULT_MAXFPS ( ctr_isNew3DS ? "60" : "30" )
+#else
+#define HOST_DEFAULT_MAXFPS "60"
+#endif
+
+#ifdef _3DS
 int __stacksize__ = 2 * 1024 * 1024;
 u32 __ctru_linear_heap_size = 12 * 1024 * 1024;
 #endif
@@ -1282,7 +1290,8 @@ int EXPORT Host_Main( int argc, const char **argv, const char *progname, int bCh
 {
 	#ifdef _3DS
 
-	osSetSpeedupEnable(true);
+	APT_CheckNew3DS(&ctr_isNew3DS);
+	osSetSpeedupEnable(true); // no-op on old 3DS/2DS
 
 	gfxInit(GSP_RGB565_OES,GSP_RGB565_OES,false);
 	gfxSetDoubleBuffering(GFX_BOTTOM, false);
@@ -1320,7 +1329,7 @@ int EXPORT Host_Main( int argc, const char **argv, const char *progname, int bCh
 	}
 
 	host_cheats = Cvar_Get( "sv_cheats", "0", CVAR_LATCH, "allow usage of cheat commands and variables" );
-	host_maxfps = Cvar_Get( "fps_max", "60", CVAR_ARCHIVE, "host fps upper limit" );
+	host_maxfps = Cvar_Get( "fps_max", HOST_DEFAULT_MAXFPS, CVAR_ARCHIVE, "host fps upper limit" );
 	host_sleeptime = Cvar_Get( "sleeptime", "1", CVAR_ARCHIVE, "higher value means lower accuracy" );
 	host_framerate = Cvar_Get( "host_framerate", "0", 0, "locks frame timing to this value in seconds" );  
 	host_serverstate = Cvar_Get( "host_serverstate", "0", CVAR_INIT, "displays current server state" );

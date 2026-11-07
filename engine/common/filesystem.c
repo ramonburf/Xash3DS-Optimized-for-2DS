@@ -37,7 +37,257 @@ GNU General Public License for more details.
 #include <unistd.h>
 #endif
 
+#ifdef _3DS
+// every read() on the 3DS SD card is an IPC round-trip to the FS service,
+// so small buffered reads are very slow; read in bigger chunks
+#define FILE_BUFF_SIZE		(16 * 1024)
+#else
 #define FILE_BUFF_SIZE		2048
+#endif
+#ifdef _3DS
+/*
+=============================================================================
+
+3DS DIRECTORY CACHE
+
+Every open()/stat() on the 3DS SD card goes through the FS service and is
+slow. During map load the engine probes every search path for each model,
+sound, sprite and texture (most probes miss), which adds up to seconds.
+Instead each directory is listed once with readdir() and later existence
+checks are a hash lookup. FAT is case-insensitive, so names are compared in
+lowercase.
+
+=============================================================================
+*/
+#define FS_DIRCACHE_BUCKETS	256
+#ifndef FS_DIRCACHE_PREFIX
+// only the SD card is FAT (case-insensitive); romfs lookups are case-sensitive
+#define FS_DIRCACHE_PREFIX	"sdmc:/"
+#endif
+
+typedef struct fs_dircache_s
+{
+	struct fs_dircache_s	*next;
+	uint			hash;
+	char			*path;		// lowercase directory path, no trailing slash
+	int			tablesize;	// power of two, 0 if directory doesn't exist
+	char			**names;	// open addressing table of lowercase file names
+	uint			*hashes;
+} fs_dircache_t;
+
+static fs_dircache_t	*fs_dircache[FS_DIRCACHE_BUCKETS];
+
+static uint FS_DirCacheHash( const char *s, int len )
+{
+	uint	h = 2166136261u;
+	int	i;
+
+	for( i = 0; i < len; i++ )
+		h = ( h ^ (byte)s[i] ) * 16777619u;
+	return h;
+}
+
+// forward slashes, collapse double slashes, optionally lowercase
+static int FS_DirCacheNormalizeCase( const char *in, char *out, int outsize, int lower )
+{
+	int	len = 0;
+
+	for( ; *in && len < outsize - 1; in++ )
+	{
+		char c = ( *in == '\\' ) ? '/' : ( lower ? Q_tolower( *in ) : *in );
+		if( c == '/' && len > 0 && out[len-1] == '/' )
+			continue;
+		out[len++] = c;
+	}
+	out[len] = 0;
+	return len;
+}
+
+#define FS_DirCacheNormalize( in, out, size ) FS_DirCacheNormalizeCase( in, out, size, true )
+
+static void FS_DirCacheFreeEntry( fs_dircache_t *e )
+{
+	int	i;
+
+	for( i = 0; i < e->tablesize; i++ )
+		if( e->names[i] ) free( e->names[i] );
+	free( e->names );
+	free( e->hashes );
+	free( e->path );
+	free( e );
+}
+
+static void FS_DirCacheInsert( fs_dircache_t *e, char *name )
+{
+	uint	h = FS_DirCacheHash( name, Q_strlen( name ));
+	uint	i = h & ( e->tablesize - 1 );
+
+	while( e->names[i] )
+	{
+		if( e->hashes[i] == h && !Q_strcmp( e->names[i], name ))
+		{
+			free( name ); // duplicate
+			return;
+		}
+		i = ( i + 1 ) & ( e->tablesize - 1 );
+	}
+	e->names[i] = name;
+	e->hashes[i] = h;
+}
+
+static fs_dircache_t *FS_DirCacheBuild( const char *dir, const char *realdir, uint hash )
+{
+	fs_dircache_t	*e;
+	DIR		*d;
+	struct dirent	*ent;
+	char		**list = NULL;
+	int		count = 0, alloced = 0, i;
+
+	e = calloc( 1, sizeof( *e ));
+	if( !e ) return NULL;
+	e->hash = hash;
+	e->path = strdup( dir );
+
+	d = opendir( realdir ); // original case
+	if( d )
+	{
+		while(( ent = readdir( d )) != NULL )
+		{
+			char	name[MAX_SYSPATH];
+
+			if( ent->d_name[0] == '.' && ( !ent->d_name[1] || ( ent->d_name[1] == '.' && !ent->d_name[2] )))
+				continue;
+#ifdef DT_DIR
+			if( ent->d_type == DT_DIR )
+				continue; // open() fails on folders, so they never count as files
+#endif
+			if( count == alloced )
+			{
+				char **newlist;
+				alloced = alloced ? alloced * 2 : 64;
+				newlist = realloc( list, alloced * sizeof( char* ));
+				if( !newlist ) break;
+				list = newlist;
+			}
+			FS_DirCacheNormalize( ent->d_name, name, sizeof( name ));
+			list[count++] = strdup( name );
+		}
+		closedir( d );
+
+		e->tablesize = 16;
+		while( e->tablesize < count * 2 )
+			e->tablesize <<= 1;
+		e->names = calloc( e->tablesize, sizeof( char* ));
+		e->hashes = calloc( e->tablesize, sizeof( uint ));
+
+		if( !e->names || !e->hashes )
+		{
+			for( i = 0; i < count; i++ ) free( list[i] );
+			free( list );
+			free( e->names );
+			free( e->hashes );
+			free( e->path );
+			free( e );
+			return NULL;
+		}
+
+		for( i = 0; i < count; i++ )
+			if( list[i] ) FS_DirCacheInsert( e, list[i] );
+		free( list );
+	}
+
+	e->next = fs_dircache[hash & ( FS_DIRCACHE_BUCKETS - 1 )];
+	fs_dircache[hash & ( FS_DIRCACHE_BUCKETS - 1 )] = e;
+	return e;
+}
+
+// returns -1 if unknown (caller must ask the disk), 0 if missing, 1 if present
+static int FS_DirCacheFileExists( const char *path )
+{
+	char		norm[MAX_SYSPATH], real[MAX_SYSPATH];
+	char		*slash, *name;
+	fs_dircache_t	*e;
+	uint		h, nh, i;
+	int		len;
+
+	if( Q_strnicmp( path, FS_DIRCACHE_PREFIX, sizeof( FS_DIRCACHE_PREFIX ) - 1 ))
+		return -1;
+
+	len = FS_DirCacheNormalize( path, norm, sizeof( norm ));
+	if( len >= (int)sizeof( norm ) - 1 )
+		return -1;
+
+	slash = Q_strrchr( norm, '/' );
+	if( !slash || slash == norm )
+		return -1; // relative or root path, not worth caching
+	*slash = 0;
+	name = slash + 1;
+	if( !*name ) return -1;
+
+	h = FS_DirCacheHash( norm, slash - norm );
+	for( e = fs_dircache[h & ( FS_DIRCACHE_BUCKETS - 1 )]; e; e = e->next )
+		if( e->hash == h && !Q_strcmp( e->path, norm ))
+			break;
+
+	if( !e )
+	{
+		// same normalization minus lowercasing, so the last '/' is at the same spot
+		FS_DirCacheNormalizeCase( path, real, sizeof( real ), false );
+		real[slash - norm] = 0;
+		e = FS_DirCacheBuild( norm, real, h );
+	}
+	if( !e ) return -1;
+	if( !e->tablesize ) return 0; // no such directory
+
+	nh = FS_DirCacheHash( name, Q_strlen( name ));
+	for( i = nh & ( e->tablesize - 1 ); e->names[i]; i = ( i + 1 ) & ( e->tablesize - 1 ))
+	{
+		if( e->hashes[i] == nh && !Q_strcmp( e->names[i], name ))
+			return 1;
+	}
+	return 0;
+}
+
+// forget the listing of the directory holding "path", and of "path" itself
+// in case it is a directory that was just created or removed
+static void FS_DirCacheInvalidate( const char *path )
+{
+	char	norm[MAX_SYSPATH];
+	char	*slash;
+	int	pass;
+
+	FS_DirCacheNormalize( path, norm, sizeof( norm ));
+
+	for( pass = 0; pass < 2; pass++ )
+	{
+		fs_dircache_t	**prev, *e;
+		int		len = Q_strlen( norm );
+		uint		h;
+
+		while( len > 0 && norm[len-1] == '/' )
+			norm[--len] = 0;
+
+		h = FS_DirCacheHash( norm, len );
+		for( prev = &fs_dircache[h & ( FS_DIRCACHE_BUCKETS - 1 )]; ( e = *prev ) != NULL; )
+		{
+			if( e->hash == h && !Q_strcmp( e->path, norm ))
+			{
+				*prev = e->next;
+				FS_DirCacheFreeEntry( e );
+			}
+			else prev = &e->next;
+		}
+
+		slash = Q_strrchr( norm, '/' );
+		if( !slash ) break;
+		*slash = 0; // now the parent directory
+	}
+}
+#define FS_DIRCACHE_INVALIDATE( p ) FS_DirCacheInvalidate( p )
+#else
+#define FS_DIRCACHE_INVALIDATE( p )
+#endif // _3DS
+
 #define PAK_LOAD_OK			0
 #define PAK_LOAD_COULDNT_OPEN		1
 #define PAK_LOAD_BAD_HEADER		2
@@ -442,6 +692,7 @@ void FS_CreatePath( char *path )
 			save = *ofs;
 			*ofs = 0;
 			_mkdir( path );
+			FS_DIRCACHE_INVALIDATE( path );
 			*ofs = save;
 		}
 	}
@@ -2066,7 +2317,12 @@ static file_t* FS_SysOpen( const char* filepath, const char* mode )
 	}
 
 	file = (file_t *)Mem_Alloc( fs_mempool, sizeof( *file ));
+#ifdef _3DS
+	file->filetime = 0; // stat() is slow on SD and file_t filetime is never read
+	if( mod != O_RDONLY ) FS_DIRCACHE_INVALIDATE( filepath );
+#else
 	file->filetime = FS_SysFileTime( filepath );
+#endif
 	file->ungetc = EOF;
 
 	file->handle = open( filepath, mod|opt, 0666 );
@@ -2147,6 +2403,13 @@ qboolean FS_SysFileExists( const char *path, qboolean caseinsensitive )
 {
 #ifdef _3DS
 	int desc;
+
+	switch( FS_DirCacheFileExists( path ))
+	{
+	case 0: return false;
+	case 1: return true;
+	default: break;
+	}
 
 	desc = open( path, O_RDONLY|O_BINARY );
 	if( desc < 0 ) return false;
@@ -3176,6 +3439,8 @@ qboolean FS_Rename( const char *oldname, const char *newname )
 	COM_FixSlashes( newpath );
 
 	iRet = rename( oldpath, newpath );
+	FS_DIRCACHE_INVALIDATE( oldpath );
+	FS_DIRCACHE_INVALIDATE( newpath );
 
 	return (iRet == 0);
 }
@@ -3198,6 +3463,7 @@ qboolean FS_Delete( const char *path )
 	Q_snprintf( real_path, sizeof( real_path ), "%s%s", fs_gamedir, path );
 	COM_FixSlashes( real_path );
 	iRet = remove( real_path );
+	FS_DIRCACHE_INVALIDATE( real_path );
 
 	return (iRet == 0);
 }
@@ -3766,6 +4032,7 @@ wfile_t *W_Open( const char *filename, const char *mode )
 	wfile_t		*wad = (wfile_t *)Mem_Alloc( fs_mempool, sizeof( wfile_t ));
 	const char	*comment = "Generated by Xash WadLib. ";
 
+	if( mode[0] != 'r' ) FS_DIRCACHE_INVALIDATE( filename );
 	if( mode[0] == 'a' ) wad->handle = open( filename, O_RDWR|O_BINARY, 0x666 );
 	else if( mode[0] == 'w' ) wad->handle = open( filename, O_CREAT|O_TRUNC|O_WRONLY|O_BINARY, 0x666 );
 	else if( mode[0] == 'r' ) wad->handle = open( filename, O_RDONLY|O_BINARY, 0x666 );
