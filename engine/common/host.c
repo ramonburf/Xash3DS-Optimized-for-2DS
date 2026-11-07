@@ -78,10 +78,6 @@ static int num_decals;
 
 #ifdef _3DS
 bool ctr_isNew3DS = false; // old 3DS/2DS (268MHz, single app core) gets lighter defaults
-// O3DS/2DS can't hold 60fps; a 30fps cap gives steadier pacing and frees CPU for GPU/sound
-#define HOST_DEFAULT_MAXFPS ( ctr_isNew3DS ? "60" : "30" )
-#else
-#define HOST_DEFAULT_MAXFPS "60"
 #endif
 
 #ifdef _3DS
@@ -712,6 +708,19 @@ qboolean Host_FilterTime( float time )
 	// dedicated's tic_rate regulates server frame rate.  Don't apply fps filter here.
 	fps = host_maxfps->value;
 
+#ifdef _3DS
+	{
+		// with vsync on, waiting for the screen already paces frames at the
+		// display rate (16.71 ms). Also limiting to 1/fps_max (16.67 ms) would
+		// sometimes reject a frame on timer jitter and turn it into a 33 ms hitch
+		static convar_t	*vsync;
+
+		if( !vsync ) vsync = Cvar_FindVar( "gl_swapInterval" );
+		if( vsync && vsync->integer && fps >= 59.0f )
+			fps = 0;
+	}
+#endif
+
 	if( fps != 0 )
 	{
 		float	minframetime;
@@ -1329,7 +1338,7 @@ int EXPORT Host_Main( int argc, const char **argv, const char *progname, int bCh
 	}
 
 	host_cheats = Cvar_Get( "sv_cheats", "0", CVAR_LATCH, "allow usage of cheat commands and variables" );
-	host_maxfps = Cvar_Get( "fps_max", HOST_DEFAULT_MAXFPS, CVAR_ARCHIVE, "host fps upper limit" );
+	host_maxfps = Cvar_Get( "fps_max", "60", CVAR_ARCHIVE, "host fps upper limit" );
 	host_sleeptime = Cvar_Get( "sleeptime", "1", CVAR_ARCHIVE, "higher value means lower accuracy" );
 	host_framerate = Cvar_Get( "host_framerate", "0", 0, "locks frame timing to this value in seconds" );  
 	host_serverstate = Cvar_Get( "host_serverstate", "0", CVAR_INIT, "displays current server state" );

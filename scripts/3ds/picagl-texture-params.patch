@@ -1,0 +1,47 @@
+diff --git a/source/texture.c b/source/texture.c
+index 58c89c3..82e6fad 100644
+--- a/source/texture.c
++++ b/source/texture.c
+@@ -107,13 +107,16 @@ static inline uint32_t _picaConvertFilter(uint32_t param)
+ {
+ 	switch(param)
+ 	{	
++		// no mip levels are uploaded, so only the base filter matters
+ 		case GL_LINEAR_MIPMAP_LINEAR:
++		case GL_LINEAR_MIPMAP_NEAREST:
+ 		case GL_LINEAR: return GPU_LINEAR;
+-		
++
+ 		case GL_NEAREST_MIPMAP_NEAREST:
++		case GL_NEAREST_MIPMAP_LINEAR:
+ 		case GL_NEAREST: return GPU_NEAREST;
+ 
+-		default: return GL_LINEAR;
++		default: return GPU_LINEAR; // was GL_LINEAR, a GL enum, not a GPU value
+ 	}
+ }
+ 
+@@ -303,17 +306,19 @@ void glTexParameterf(GLenum target, GLenum pname, GLfloat param)
+ 
+ 	switch(pname)
+ 	{
++		// clear exactly the field being set (the old 16-bit masks cleared the
++		// neighbouring filter bit and the whole upper half of the register)
+ 		case GL_TEXTURE_MAG_FILTER:
+-			tex_param = (tex_param & 0xFFFE) | GPU_TEXTURE_MAG_FILTER(_picaConvertFilter(param));
++			tex_param = (tex_param & ~GPU_TEXTURE_MAG_FILTER(1)) | GPU_TEXTURE_MAG_FILTER(_picaConvertFilter(param));
+ 			break;
+ 		case GL_TEXTURE_MIN_FILTER:
+-			tex_param = (tex_param & 0xFFFD) | GPU_TEXTURE_MIN_FILTER(_picaConvertFilter(param));
++			tex_param = (tex_param & ~GPU_TEXTURE_MIN_FILTER(1)) | GPU_TEXTURE_MIN_FILTER(_picaConvertFilter(param));
+ 			break;
+ 		case GL_TEXTURE_WRAP_T:
+-			tex_param = (tex_param & 0xFCFF) | GPU_TEXTURE_WRAP_T(_picaConvertWrap(param));
++			tex_param = (tex_param & ~GPU_TEXTURE_WRAP_T(3)) | GPU_TEXTURE_WRAP_T(_picaConvertWrap(param));
+ 			break;
+ 		case GL_TEXTURE_WRAP_S:
+-			tex_param = (tex_param & 0xCFFF) | GPU_TEXTURE_WRAP_S(_picaConvertWrap(param));
++			tex_param = (tex_param & ~GPU_TEXTURE_WRAP_S(3)) | GPU_TEXTURE_WRAP_S(_picaConvertWrap(param));
+ 			break;
+ 		default:
+ 			return;

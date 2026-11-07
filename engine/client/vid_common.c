@@ -97,13 +97,6 @@ glstate_t		glState;
 glwstate_t	glw_state;
 
 #ifdef _3DS
-extern _Bool ctr_isNew3DS;
-#define CTR_LITE( lite, full ) ( ctr_isNew3DS ? (full) : (lite) )
-#else
-#define CTR_LITE( lite, full ) full
-#endif
-
-#ifdef _3DS
 vidmode_t vidmode[] =
 {
 { "400 x 240",			400,	240,	true	},
@@ -891,11 +884,21 @@ void GL_InitCommands( void )
 	gl_skymip = Cvar_Get( "gl_skymip", "0", CVAR_GLCONFIG, "reduces resolution of skybox textures by powers of 2" );
 	gl_allow_software = Cvar_Get( "gl_allow_software", "0", CVAR_ARCHIVE, "allow OpenGL software emulation" );
 	gl_alphabits = Cvar_Get( "gl_alphabits", "8", CVAR_GLCONFIG, "pixelformat alpha bits (0 - auto)" );
-	gl_texturemode = Cvar_Get( "gl_texturemode", "GL_LINEAR_MIPMAP_LINEAR", CVAR_ARCHIVE, "texture filter" );
+	gl_texturemode = Cvar_Get( "gl_texturemode",
+#ifdef _3DS
+		"GL_NEAREST", // point filtering; lightmaps, HUD and menus stay bilinear
+#else
+		"GL_LINEAR_MIPMAP_LINEAR",
+#endif
+		 CVAR_ARCHIVE, "texture filter" );
 	gl_max_size = Cvar_Get( "gl_max_size", "512", CVAR_ARCHIVE, "no effect in Xash3D just a legacy" );
 	gl_stencilbits = Cvar_Get( "gl_stencilbits", "8", CVAR_GLCONFIG, "pixelformat stencil bits (0 - auto)" );
 	gl_check_errors = Cvar_Get( "gl_check_errors", CTR_LITE( "0", "1" ), CVAR_ARCHIVE, "ignore video engine errors" );
+	#ifdef _3DS
+	gl_swapInterval = Cvar_Get( "gl_swapInterval", "1", CVAR_ARCHIVE,  "vsync: 1 waits for the screen refresh after each frame (no tearing, but slow frames drop to 30 fps), 0 off" );
+#else
 	gl_swapInterval = Cvar_Get( "gl_swapInterval", "0", CVAR_ARCHIVE,  "time beetween frames (in msec)" );
+#endif
 	gl_extensions = Cvar_Get( "gl_extensions", "1", CVAR_GLCONFIG, "allow gl_extensions" );
 	gl_detailscale = Cvar_Get( "gl_detailscale", "4.0", CVAR_ARCHIVE, "default scale applies while auto-generate list of detail textures" );
 	gl_texture_anisotropy = Cvar_Get( "gl_anisotropy", "2.0", CVAR_ARCHIVE, "textures anisotropic filter" );

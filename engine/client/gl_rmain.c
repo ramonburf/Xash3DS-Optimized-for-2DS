@@ -18,6 +18,9 @@ GNU General Public License for more details.
 #include "common.h"
 #include "client.h"
 #include "gl_local.h"
+#ifdef _3DS
+#include <3ds.h> // gspWaitForVBlank
+#endif
 #include "mathlib.h"
 #include "library.h"
 #include "beamdef.h"
@@ -1355,6 +1358,10 @@ void R_EndFrame( void )
 	Android_SwapBuffers();
 #elif defined _3DS
 	pglSwapBuffers();
+	// vsync: the swap happens at the next vblank, and the next frame would
+	// otherwise start drawing into the buffer still on screen (tearing)
+	if( gl_swapInterval->integer )
+		gspWaitForVBlank();
 #endif
 }
 

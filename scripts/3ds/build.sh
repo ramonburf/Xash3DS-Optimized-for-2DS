@@ -41,6 +41,8 @@ echo "== picaGL"
 fetch deps/picaGL $PICAGL_URL $PICAGL_REV
 # modern libctru warns about -D_3DS, and picaGL builds with -Werror
 sed -i 's/-DARM11 -D_3DS/-D__3DS__/' deps/picaGL/Makefile
+# texture filter/wrap bit masks were wrong (min filter cleared mag filter, etc.)
+git -C deps/picaGL apply "$ROOT/scripts/3ds/picagl-texture-params.patch"
 make -C deps/picaGL -j$J
 mkdir -p $DEVKITPRO/picaGL/lib $DEVKITPRO/picaGL/include
 cp deps/picaGL/lib/libpicaGL.a $DEVKITPRO/picaGL/lib/

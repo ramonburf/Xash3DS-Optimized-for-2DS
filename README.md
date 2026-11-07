@@ -11,8 +11,14 @@ Faster map loading (all consoles):
 - Faster sound visibility (PAS) build at map load
 - Buffered writes for save files, so level transitions don't do thousands of tiny SD card writes
 
+Display (all 3DS):
+- 60 fps cap with vsync (`gl_swapInterval 1`): no tearing, but frames slower than 1/60 s wait for the next refresh (30 fps). Set `gl_swapInterval 0` to turn it off
+- Point filtering on world and model textures (`gl_texturemode GL_NEAREST`); lightmaps, HUD and menus stay smooth. `GL_LINEAR` brings bilinear back
+- FPS counter on (`cl_showfps 0` hides it)
+- picaGL texture filter/wrap settings fixed (setting one filter used to clobber the other)
+
 Lighter defaults on old 3DS / 2DS only:
-- `fps_max 30`, 128px max texture size, `r_dynamic 0`, `r_decals 128`, `gl_check_errors 0`
+- 128px max texture size, `r_dynamic 0`, `r_decals 128`, `gl_check_errors 0`, `dsp_off 1` (no room echo/reverb)
 
 **On old 3DS / 2DS, install the `.cia`.** It requests the 80 MB memory mode; the `.3dsx` from the Homebrew Launcher gets too little memory for Half-Life there and can crash with "out of memory".
 

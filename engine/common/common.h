@@ -16,6 +16,14 @@ GNU General Public License for more details.
 #ifndef COMMON_H
 #define COMMON_H
 
+// cvar default that is lighter on old 3DS / 2DS than on New 3DS and other platforms
+#ifdef _3DS
+extern _Bool ctr_isNew3DS;
+#define CTR_LITE( lite, full ) ( ctr_isNew3DS ? (full) : (lite) )
+#else
+#define CTR_LITE( lite, full ) full
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
