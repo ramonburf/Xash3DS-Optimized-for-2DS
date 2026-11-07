@@ -64,6 +64,23 @@ cp mainui_3ds/libmainui.a lib/
 echo "== engine"
 make -j$J TARGET=Xash3DS "$OLDC $LEGACY"
 
+echo "== checking for clashing globals"
+# The engine links with --allow-multiple-definition, so a global defined in
+# both the engine and the game libraries silently becomes one copy. Since
+# GCC 10 (-fno-common) that copy can be the smaller one, and writes to the
+# bigger one corrupt whatever follows it (this crashed the game: the game
+# code's 20-byte 'cvar_t teamplay' landed on the engine's 4-byte pointer).
+NM=$DEVKITARM/bin/arm-none-eabi-nm
+syms() { $NM -S --defined-only "$@" 2>/dev/null | awk 'NF==4 && $3 ~ /^[BDRC]$/ {print $4, $2}' | sort -u; }
+syms build/*.o > /tmp/engine.sym
+syms lib/*.a > /tmp/libs.sym
+CLASH=$(join /tmp/engine.sym /tmp/libs.sym | awk '$2 != $3')
+if [ -n "$CLASH" ]; then
+	echo "globals defined in both engine and game libs with different sizes (name engine-size lib-size):"
+	echo "$CLASH"
+	exit 1
+fi
+
 if [ -n "$SKIP_CIA" ]; then
 	ls -la Xash3DS.3dsx
 	exit 0

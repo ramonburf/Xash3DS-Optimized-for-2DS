@@ -81,7 +81,10 @@ convar_t	*sv_quakehulls;
 convar_t	*mp_consistency;
 convar_t	*clockwindow;
 convar_t	*deathmatch;
-convar_t	*teamplay;
+// named sv_teamplay, not teamplay: the statically linked game code defines
+// its own 'cvar_t teamplay' (20 bytes) and the linker merged the two, so
+// registering mp_teamplay overwrote the globals after this 4-byte pointer
+convar_t	*sv_teamplay;
 convar_t	*skill;
 convar_t	*coop;
 convar_t	*sv_skipshield; // HACK for shield
@@ -887,7 +890,7 @@ void SV_Init( void )
 
 	skill = Cvar_Get ("skill", "1", CVAR_LATCH, "game skill level" );
 	deathmatch = Cvar_Get ("deathmatch", "0", CVAR_LATCH|CVAR_SERVERINFO, "displays deathmatch state" );
-	teamplay = Cvar_Get ("teamplay", "0", CVAR_LATCH|CVAR_SERVERINFO, "displays teamplay state" );
+	sv_teamplay = Cvar_Get ("teamplay", "0", CVAR_LATCH|CVAR_SERVERINFO, "displays teamplay state" );
 	coop = Cvar_Get ("coop", "0", CVAR_LATCH|CVAR_SERVERINFO, "displays cooperative state" );
 	Cvar_Get ("protocol", va( "%i", PROTOCOL_VERSION ), CVAR_INIT, "displays server protocol version" );
 	Cvar_Get ("defaultmap", "", CVAR_SERVERNOTIFY, "holds the multiplayer mapname" );

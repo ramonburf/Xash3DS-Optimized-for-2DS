@@ -162,7 +162,7 @@ CL_IsThirdPerson
 returns true if thirdperson is enabled
 ====================
 */
-qboolean CL_IsThirdPerson( void )
+qboolean CL_EngineIsThirdPerson( void ) // renamed: clashed with the statically linked client's CL_IsThirdPerson export
 {
 	return cl.thirdperson;
 }

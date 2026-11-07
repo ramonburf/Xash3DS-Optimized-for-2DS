@@ -954,7 +954,7 @@ void IN_EngineAppendMove( float frametime, usercmd_t *cmd, qboolean active );
 qboolean CL_IsInGame( void );
 qboolean CL_IsInMenu( void );
 qboolean CL_IsInConsole( void );
-qboolean CL_IsThirdPerson( void );
+qboolean CL_EngineIsThirdPerson( void );
 qboolean CL_IsIntermission( void );
 void CL_WarnLostSplitPacket( void );
 float CL_GetServerTime( void );

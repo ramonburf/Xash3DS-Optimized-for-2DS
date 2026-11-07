@@ -260,7 +260,7 @@ void SV_Map_f( void )
 	NET_Config( ( sv_maxclients->integer > 1 ), true );
 
 	// changing singleplayer to multiplayer or back. refresh the player count
-	if(( sv_maxclients->modified ) || ( deathmatch->modified ) || ( coop->modified ) || ( teamplay->modified ))
+	if(( sv_maxclients->modified ) || ( deathmatch->modified ) || ( coop->modified ) || ( sv_teamplay->modified ))
 		Host_ShutdownServer();
 
 	SCR_BeginLoadingPlaque( false );

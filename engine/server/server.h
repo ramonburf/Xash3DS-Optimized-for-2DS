@@ -460,7 +460,7 @@ extern	convar_t		*mp_consistency;
 extern	convar_t		*public_server;
 extern	convar_t		*physinfo;
 extern	convar_t		*deathmatch;
-extern	convar_t		*teamplay;
+extern	convar_t		*sv_teamplay;
 extern	convar_t		*skill;
 extern	convar_t		*coop;
 extern	convar_t		*sv_corpse_solid;
