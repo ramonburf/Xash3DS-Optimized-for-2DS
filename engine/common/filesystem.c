@@ -322,6 +322,8 @@ struct file_s
 	time_t		filetime;			// pak, wad or real filetime
 						// Contents buffer
 	fs_offset_t	buff_ind, buff_len;		// buffer current index and length
+	qboolean		wbuffered;		// write-only file, "buff" collects writes instead
+	fs_offset_t	wbuff_len;		// bytes waiting in "buff" (already counted in position)
 	byte		buff[FILE_BUFF_SIZE];	// intermediate buffer
 };
 
@@ -2354,7 +2356,37 @@ static file_t* FS_SysOpen( const char* filepath, const char* mode )
 	if( mod & O_APPEND ) file->position = file->real_length;
 	else lseek( file->handle, 0, SEEK_SET );
 
+#ifdef _3DS
+	// the save code writes thousands of 4-byte fields; unbuffered, each one is
+	// a separate SD card write (plus two seeks), so collect them in "buff"
+	if( mod == O_WRONLY )
+		file->wbuffered = true;
+#endif
+
 	return file;
+}
+
+/*
+====================
+FS_FlushWriteBuffer
+
+Write out data collected by FS_Write on a write-buffered file
+====================
+*/
+static qboolean FS_FlushWriteBuffer( file_t *file )
+{
+	fs_offset_t	len = file->wbuff_len;
+	fs_offset_t	done = 0, nb;
+
+	file->wbuff_len = 0;
+
+	while( done < len )
+	{
+		nb = write( file->handle, file->buff + done, len - done );
+		if( nb <= 0 ) return false;
+		done += nb;
+	}
+	return true;
 }
 
 
@@ -2720,6 +2752,9 @@ Close a file
 */
 int FS_Close( file_t *file )
 {
+	if( file->wbuffered && file->wbuff_len )
+		FS_FlushWriteBuffer( file );
+
 	if( close( file->handle ))
 		return EOF;
 
@@ -2739,6 +2774,34 @@ fs_offset_t FS_Write( file_t *file, const void *data, size_t datasize )
 	fs_offset_t	result;
 
 	if( !file ) return 0;
+
+	if( file->wbuffered )
+	{
+		// small writes go to the buffer; position counts them immediately
+		// so FS_Tell / FS_Eof / FS_Seek( SEEK_CUR ) stay correct
+		if( file->wbuff_len + (fs_offset_t)datasize > (fs_offset_t)sizeof( file->buff ))
+		{
+			if( !FS_FlushWriteBuffer( file ))
+				return 0;
+		}
+
+		if( datasize < sizeof( file->buff ))
+		{
+			Q_memcpy( file->buff + file->wbuff_len, data, datasize );
+			file->wbuff_len += datasize;
+			result = datasize;
+		}
+		else
+		{
+			result = write( file->handle, data, (fs_offset_t)datasize );
+			if( result < 0 ) return 0;
+		}
+
+		file->position += result;
+		if( file->real_length < file->position )
+			file->real_length = file->position;
+		return result;
+	}
 
 	// if necessary, seek to the exact file position we're supposed to be
 	if( file->buff_ind != file->buff_len )
@@ -2772,6 +2835,9 @@ fs_offset_t FS_Read( file_t *file, void *buffer, size_t buffersize )
 
 	// nothing to copy
 	if( buffersize == 0 ) return 1;
+
+	if( file->wbuffered )
+		return 0; // opened write-only
 
 	// Get rid of the ungetc character
 	if( file->ungetc != EOF )
@@ -2896,7 +2962,9 @@ int FS_VPrintf( file_t *file, const char* format, va_list ap )
 		buff_size *= 2;
 	}
 
-	len = write( file->handle, tempbuff, len );
+	if( file->wbuffered )
+		len = FS_Write( file, tempbuff, len ); // keep ordering with buffered writes
+	else len = write( file->handle, tempbuff, len );
 	Mem_Free( tempbuff );
 
 	return len;
@@ -2962,6 +3030,16 @@ int FS_Seek( file_t *file, fs_offset_t offset, int whence )
 
 	if( offset < 0 || offset > (int)file->real_length )
 		return -1;
+
+	if( file->wbuffered )
+	{
+		if( file->wbuff_len && !FS_FlushWriteBuffer( file ))
+			return -1;
+		if( lseek( file->handle, file->offset + offset, SEEK_SET ) == -1 )
+			return -1;
+		file->position = offset;
+		return 0;
+	}
 
 	// if we have the data in our read buffer, we don't need to actually seek
 	if( file->position - file->buff_len <= offset && offset <= file->position )

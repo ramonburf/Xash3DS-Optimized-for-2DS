@@ -9,6 +9,7 @@ Faster map loading (all consoles):
 - 16 KB file read buffer instead of 2 KB, and no `stat()` on every file open
 - No software mipmaps at texture upload (picaGL discards mip levels above 0 anyway)
 - Faster sound visibility (PAS) build at map load
+- Buffered writes for save files, so level transitions don't do thousands of tiny SD card writes
 
 Lighter defaults on old 3DS / 2DS only:
 - `fps_max 30`, 128px max texture size, `r_dynamic 0`, `r_decals 128`, `gl_check_errors 0`
