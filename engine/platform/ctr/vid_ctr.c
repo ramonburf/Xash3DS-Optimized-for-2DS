@@ -22,6 +22,29 @@ GNU General Public License for more details.
 #include "input.h"
 #include "gl_vidnt.h"
 
+#include <malloc.h>
+#include <unistd.h>
+
+/*
+=================
+CTR_MemoryInfo
+
+Free main heap (free malloc chunks plus heap not yet handed to malloc)
+and free linear memory (GPU-visible, used by picaGL for textures)
+=================
+*/
+void CTR_MemoryInfo( size_t *heapfree, size_t *linearfree )
+{
+	extern char		*fake_heap_end;
+	struct mallinfo	mi = mallinfo();
+	char		*brk = (char *)sbrk( 0 );
+
+	*heapfree = mi.fordblks;
+	if( brk != (char *)-1 && brk < fake_heap_end )
+		*heapfree += fake_heap_end - brk;
+	*linearfree = linearSpaceFree();
+}
+
 typedef enum
 {
 	rserr_ok,

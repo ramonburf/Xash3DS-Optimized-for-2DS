@@ -1609,6 +1609,17 @@ void CL_PrepVideo( void )
 
 	cl.video_prepped = true;
 	cl.force_refdef = true;
+
+#ifdef _3DS
+	{
+		// shown in the bottom screen log, so memory headroom per level can be reported
+		extern void CTR_MemoryInfo( size_t *heapfree, size_t *linearfree );
+		size_t	heapfree, linearfree;
+
+		CTR_MemoryInfo( &heapfree, &linearfree );
+		Msg( "Memory free after level load: heap %u KB, linear %u KB\n", (uint)( heapfree >> 10 ), (uint)( linearfree >> 10 ));
+	}
+#endif
 }
 
 /*

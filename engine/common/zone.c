@@ -66,6 +66,21 @@ typedef struct mempool_s
 
 mempool_t *poolchain; // critical stuff
 
+// say how much was asked for and, on 3DS, how much was left
+static void Mem_OutOfMemory( size_t size, const char *filename, int fileline )
+{
+#ifdef _3DS
+	extern void CTR_MemoryInfo( size_t *heapfree, size_t *linearfree );
+	size_t	heapfree, linearfree;
+
+	CTR_MemoryInfo( &heapfree, &linearfree );
+	Sys_Error( "Mem_Alloc: out of memory: %u KB at %s:%i (heap free %u KB, linear free %u KB)\n",
+		(uint)( size >> 10 ), filename, fileline, (uint)( heapfree >> 10 ), (uint)( linearfree >> 10 ));
+#else
+	Sys_Error( "Mem_Alloc: out of memory (alloc at %s:%i)\n", filename, fileline );
+#endif
+}
+
 void *_Mem_Alloc( byte *poolptr, size_t size, const char *filename, int fileline )
 {
 	int		i, j, k, needed, endbit, largest;
@@ -114,7 +129,7 @@ loopcontinue:;
 
 		pool->realsize += sizeof( memclump_t );
 		clump = malloc( sizeof( memclump_t ));
-		if( clump == NULL ) Sys_Error( "Mem_Alloc: out of memory (alloc at %s:%i)\n", filename, fileline );
+		if( clump == NULL ) Mem_OutOfMemory( sizeof( memclump_t ), filename, fileline );
 		_Q_memset( clump, 0, sizeof( memclump_t ), filename, fileline );
 		*clumpchainpointer = clump;
 		clump->sentinel1 = MEMCLUMP_SENTINEL;
@@ -136,7 +151,7 @@ choseclump:
 		// big allocations are not clumped
 		pool->realsize += sizeof( memheader_t ) + size + sizeof( int );
 		mem = (memheader_t *)malloc( sizeof( memheader_t ) + size + sizeof( int ));
-		if( mem == NULL ) Sys_Error( "Mem_Alloc: out of memory (alloc at %s:%i)\n", filename, fileline );
+		if( mem == NULL ) Mem_OutOfMemory( size, filename, fileline );
 		mem->clump = NULL;
 	}
 

@@ -44,7 +44,11 @@ static qboolean g_utf8 = false;
 #define MAX_DBG_NOTIFY	128
 #define CON_NUMFONTS	3	// maxfonts
 
+#ifdef _3DS
+#define CON_TEXTSIZE	32768	// 32 kb is plenty on a 400x240 screen
+#else
 #define CON_TEXTSIZE	131072	// 128 kb buffer
+#endif
 
 // console color typeing
 rgba_t g_color_table[8] =

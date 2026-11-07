@@ -1837,6 +1837,14 @@ typedef struct vbodecal_s
 } vbodecal_t;
 
 #define DECAL_VERTS_MAX 32
+#ifdef _3DS
+// picaGL has no vertex buffer objects, so R_GenerateVBO forces r_vbo to 0 and
+// nothing touches these arrays (R_DrawVBO and R_AddDecalVBO bail out first);
+// don't reserve ~1 MB of static memory for them
+#define VBO_DECAL_DLIGHT_VERTS 1
+#else
+#define VBO_DECAL_DLIGHT_VERTS ( MAX_RENDER_DECALS * DECAL_VERTS_MAX )
+#endif
 #define DECAL_VERTS_CUT 8
 
 typedef struct vbodecaldata_s
@@ -1865,9 +1873,9 @@ struct vbo_static_s
 	unsigned short *dlight_index; // array
 	vec2_t *dlight_tc; // array
 	unsigned int dlight_vbo;
-	vbovertex_t decal_dlight[MAX_RENDER_DECALS * DECAL_VERTS_MAX];
+	vbovertex_t decal_dlight[VBO_DECAL_DLIGHT_VERTS];
 	unsigned int decal_dlight_vbo;
-	int decal_numverts[MAX_RENDER_DECALS * DECAL_VERTS_MAX];
+	int decal_numverts[VBO_DECAL_DLIGHT_VERTS];
 
 	// prevent draining cpu on empty cycles
 	int minlightmap;
