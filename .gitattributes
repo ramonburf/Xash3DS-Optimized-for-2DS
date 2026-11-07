@@ -1,3 +1,5 @@
 # run inside the Linux build container: keep LF even on Windows checkouts
 *.sh text eol=lf
 *.patch text eol=lf
+# picaGL sources are CRLF in their repo: this patch must keep its exact bytes
+scripts/3ds/picagl-texture-params.patch -text
